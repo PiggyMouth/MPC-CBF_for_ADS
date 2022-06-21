@@ -2,6 +2,8 @@
 
 The source codes for the work "Robust Safe Control for Automated Driving Systems With Perception Uncertainties" by Yan Feng Yu are listed here.
 
+Simulation results are shown in the folder `sim_output`.
+
 ## Carla
 
 The simulation is performed using [Carla simulator](https://github.com/carla-simulator/carla) version 0.9.12.
