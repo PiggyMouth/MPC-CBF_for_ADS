@@ -1,3 +1,4 @@
+[![DOI](https://zenodo.org/badge/505930246.svg)](https://zenodo.org/badge/latestdoi/505930246)
 # MPC-CBF_for_ADS
 
 The source codes for the work "Robust Safe Control for Automated Driving Systems With Perception Uncertainties" by Yan Feng Yu are listed here.
