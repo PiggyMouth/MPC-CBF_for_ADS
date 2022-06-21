@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Yu"
+  given-names: "Yan Feng"
+  orcid: "https://orcid.org/0000-0002-4712-5228"
+title: "MPC-CBF_for_ADS"
+version: 1.0.0
+doi: 10.5281/zenodo.6677559
+date-released: 2022-06-21
+url: "https://github.com/PiggyMouth/MPC-CBF_for_ADS"
