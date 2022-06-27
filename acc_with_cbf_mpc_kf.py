@@ -87,13 +87,19 @@ except ImportError:
 # ==============================
 # ----for acc + cbf import
 import numpy as np
+import acc_MPC
+import define_system_MPC
+import cbf_clf_qp_MPC as ccq
+import ode_solver
 import matplotlib.pyplot as plt
 from fault_injector import *
 from PIL import Image
+import pdb
 import queue
 import PerceptionNet
 import torch
 import torchvision.transforms as T
+import cvxpy as cp
 from casadi import *
 from mpc import MPC
 import pickle
@@ -946,47 +952,7 @@ def game_loop(args):
     # pygame.time.Clock().get_fps()
     world = None
 
-    tot_target_reached = 0
-    num_min_waypoints = 21
-    rainy_weather = carla.WeatherParameters(40, 60, 40, 40, 0, 0, 75)
-
-    weather_changed = False
-
-    # ==============================
-    # parameters = {
-    #     'f0': .1,
-    #     'f1': 5,
-    #     'f2': .25,
-    #     'v0': 0,
-    #     'm': 1650,
-    #     'T': 1.8,
-    #     'cd': .3,
-    #     'al': .3,
-    #     'af': .3,
-    #     'vd': 18,
-    #     'G': 9.8,
-    #     'udim': 1,
-    #     'Ts': 0.05
-    # }
-
-    # vehicle = acc_MPC.AdaptiveCruiseControl(parameters)
-    # ds = define_system_MPC.ControlAffineSystem(vehicle)
-
-    # QPoption = ccq.CbfClfQpOptions()
-    # # input constraints
-    # QPoption.set_option('u_max', np.array(
-    #     [.3 * parameters['G']]))
-    # QPoption.set_option('u_min', np.array(
-    #     [-.3 * parameters['G']]))
-    # QPoption.set_option('clf_lambda', 5.0)  # 5
-    # QPoption.set_option('cbf_gamma', 5.0)
-    # QPoption.set_option('weight_input', np.array([2]))  # H
-    # # p small values makes it more conservative.
-    # QPoption.set_option('weight_slack', 2e-2)
-
-    # qp = ccq.CbfClfQp(ds, QPoption)
-
-    T = 8  # 52 with default speed # clash at 106s
+    T = 11  # 52 with default speed # clash at 106s
     dt = 0.01
     size = T/dt
     x0 = np.array([[0, 0, 100]]).T
@@ -1003,12 +969,7 @@ def game_loop(args):
     true_x = np.zeros((3, time_steps))
     true_x[:, 0] = np.copy(x0.T[0])
 
-    tt = np.zeros((1, time_steps))
     ut = np.zeros((1, time_steps))
-
-    slackt = np.zeros((1, time_steps))
-    Vt = np.zeros((1, time_steps))
-    Bt = np.zeros((1, time_steps))
     xt[:, 0] = np.copy(x0.T[0])
     # desired_ego_vel = xt[:, 0][1]
     # a_max = parameters['cd'] * parameters['G']
@@ -1016,6 +977,7 @@ def game_loop(args):
     # speed_buffer = deque(maxlen=10)
     # M = parameters['m']
     # t = 0
+    a = 0
     i = 0
     file_num = 0
     predicted_distances = []
@@ -1027,12 +989,14 @@ def game_loop(args):
     u_max = np.array([[0.3*9.81]]).T
     x_l = np.array([[0, 0, 5]]).T
     x_u = np.array([[20, 15, np.inf]]).T
-    N = 8
+    N = 12
     #################################################
     kf = kalman_filter(xt[:, i].reshape(3, 1))
     #kf = kalman_filter(xt[:, i], ut[:, i])
     #kf = KalmanFilter(0.2, 0, 5)
-
+    ctl = MPC(Q=Q, R=R, P=Q, N=N,
+              ulb=u_min, uub=u_max,
+              xlb=x_l, xub=x_u)
     try:
         client = carla.Client(args.host, args.port)
         client.set_timeout(2.0)
@@ -1078,30 +1042,11 @@ def game_loop(args):
 
         clock = pygame.time.Clock()
         recorder = ScreenRecorder(1280, 720, 60)
-        # world.world.set_weather(sunny_weather)
-
-        # get weather change info from test_config file
-        # f = open("test_config.txt", "r")
-        # extreme_weather = f.read().split(",")[27]
-        # if extreme_weather == "True":
-        #     extreme_weather = True
-        # else:
-        #     extreme_weather = False
 
         while True:
             clock.tick_busy_loop(60)
             if controller.parse_events():
                 return
-
-            # if extreme_weather and not weather_changed:
-            #     trigger_loc = world.map.get_waypoint(
-            #         carla.Location(48, -312, 0)).transform.location
-            #     dist = math.sqrt((trigger_loc.x - world.player.get_location().x)
-            #                      ** 2 + (trigger_loc.y - world.player.get_location().y)**2)
-            #     if dist < 10:
-            #         world.world.set_weather(rainy_weather)
-            #         agent.extreme_weather = True
-            #         weather_changed = True
 
             if not world.world.wait_for_tick(10.0):
                 continue
@@ -1131,10 +1076,56 @@ def game_loop(args):
             a_ref = normalizer(a_ref)
             # solve for control u at current time step
             # u, delta, B, V, feas = qp.mpc(xt[:, i], a_ref)
+            # ----------------------------------
 
-            ctl = MPC(Q=Q, R=R, P=Q, N=N,
-                      ulb=u_min, uub=u_max,
-                      xlb=x_l, xub=x_u)
+            ego_vel = world.player.get_velocity()
+            ego_loc = world.player.get_location()
+            # calc distance to leading vehicle and append it to state.
+            initial_position = carla.Location(
+                x=-326.200012, y=435.799988, z=0.032870)
+            position = compute_distance(ego_loc, initial_position)
+
+            target_vehicle_loc = target_vehicle.get_location()
+            target_vehicle_vel = target_vehicle.get_velocity()
+            target_vehicle_vel = normalizer(target_vehicle_vel)
+
+            ########################DISTANCE######################
+            distance_between_vehicles = compute_distance(
+                target_vehicle_loc, ego_loc)
+            # # Modify distance
+            if distance_between_vehicles > xt[:, 0][2]:
+                distance_between_vehicles = xt[:, 0][2]
+            # elif distance_between_vehicles < 5:
+            #     distance_between_vehicles = 0
+            #####################################################
+            # # Calculate velocity from the simulation
+            ego_vel_transform = math.sqrt(
+                ego_vel.x ** 2 + ego_vel.y ** 2 + ego_vel.z ** 2)
+
+            ################ Disturbance ########################
+            noise = np.random.normal(0, 0.5, 1)[0]
+            #distance_between_vehicles_noise = distance_between_vehicles + noise
+            # # print(noise)
+            simulation_time = int(hud.simulation_time)
+            estimated_noise_model = pickle.load(open('differences.save', 'rb'))
+            estimated_noise = estimated_noise_model.predict(
+                np.array(simulation_time).reshape(-1, 1))[0]
+            distance_between_vehicles_noise = distance_between_vehicles + \
+                estimated_noise * noise
+
+            xt[:, i][2] = distance_between_vehicles_noise
+
+            true_x[:, i][2] = distance_between_vehicles
+
+            kf.predict(a)
+            #kf.predict(fx=fx(xt[:, i+1].reshape(3, 1), ut[:, i].reshape(1, 1)))
+            xt_estimate = kf.x
+
+            kf.update(distance_between_vehicles_noise)
+            xt[:, i][2] = xt_estimate[2]
+
+            kf_x[:, i][2] = distance_between_vehicles_noise
+
             u, status = ctl.mpc_controller(xt[:, i].reshape(3, 1))
             #u, feas = MPC(xt[:, i])
             # if feas == -1:
@@ -1200,83 +1191,14 @@ def game_loop(args):
             # agent.set_speed(v)
             world.player.apply_control(control)
 
-            # if aceleration throttle is 0, 1 apply throttle, else apply brake.
-            # control.throttle = 1
-            # control.brake = 0
-            # print(desired_ego_vel)
-            # agent.set_speed(desired_ego_vel)
-            # agent.set_speed(70)
-            # leading_agent_scenario.set_speed(desired_leading_vel)
-            # leading_agent_scenario.set_speed(10)
-            # world.player.apply_control(control)
-
-            ego_vel = world.player.get_velocity()
-            ego_loc = world.player.get_location()
-            # calc distance to leading vehicle and append it to state.
-            initial_position = carla.Location(
-                x=-326.200012, y=435.799988, z=0.032870)
-            position = compute_distance(ego_loc, initial_position)
-
-            target_vehicle_loc = target_vehicle.get_location()
-            target_vehicle_vel = target_vehicle.get_velocity()
-            target_vehicle_vel = normalizer(target_vehicle_vel)
-
-            ########################DISTANCE######################
-            distance_between_vehicles = compute_distance(
-                target_vehicle_loc, ego_loc)
-            # # Modify distance
-            if distance_between_vehicles > xt[:, 0][2]:
-                distance_between_vehicles = xt[:, 0][2]
-            # elif distance_between_vehicles < 5:
-            #     distance_between_vehicles = 0
-            #####################################################
-            # # Calculate velocity from the simulation
-            ego_vel_transform = math.sqrt(
-                ego_vel.x ** 2 + ego_vel.y ** 2 + ego_vel.z ** 2)
-
-            ################ Disturbance ########################
-            noise = np.random.normal(0, 0.5, 1)[0]
-            #distance_between_vehicles_noise = distance_between_vehicles + noise
-            # # print(noise)
-            simulation_time = int(hud.simulation_time)
-            estimated_noise_model = pickle.load(open('differences.save', 'rb'))
-            estimated_noise = estimated_noise_model.predict(
-                np.array(simulation_time).reshape(-1, 1))[0]
-            distance_between_vehicles_noise = distance_between_vehicles + \
-                estimated_noise * noise
-            # print(estimated_noise*noise)
-            # print(distance_between_vehicles)
-            # simulation_time = int(hud.simulation_time)
-            # disturbance = 9.81*0.1*np.cos(2*np.pi*simulation_time/20)
-            # ego_vel_transform = ego_vel_transform + disturbance
-
-            #######################################################
-
-            # xt[:, i+1][0] = position
-            # xt[:, i+1][1] = ego_vel_transform
-            # xt[:, i+1][2] = distance_between_vehicles
-            # predicted_distance = world.predicted_dist
-            # predicted_distances.append(predicted_distance)
-            # print(predicted_distance)
             xt[:, i+1][0] = ego_vel_transform
             xt[:, i+1][1] = target_vehicle_vel
-            xt[:, i+1][2] = distance_between_vehicles_noise
 
             true_x[:, i+1][0] = ego_vel_transform
             true_x[:, i+1][1] = target_vehicle_vel
-            true_x[:, i+1][2] = distance_between_vehicles
 
             # if distance_between_vehicles_noise <= 105:
             # kf.predict()
-
-            kf.predict(a)
-            #kf.predict(fx=fx(xt[:, i+1].reshape(3, 1), ut[:, i].reshape(1, 1)))
-            xt_estimate = kf.x
-
-            kf.update(distance_between_vehicles_noise)
-            xt[:, i+1][2] = xt_estimate[2]
-
-            kf_x[:, i+1][2] = distance_between_vehicles_noise
 
             # t = t + 1
 

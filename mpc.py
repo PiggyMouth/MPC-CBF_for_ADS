@@ -141,16 +141,6 @@ class MPC(object):
 
             # Objective Function / Cost Function
             obj += self.running_cost((x_t - x0_ref), self.Q, u_t, self.R)
-
-            ############ CLF ##################
-            # pdb.set_trace()
-            # v = (x_t[0] - 18)**2
-            # v_next = (x_t_next[0] - 18)**2
-            # clf = v_next + (0.5-1) * v
-            # con_ineq.append(clf)
-            # con_ineq_ub.append(np.array([[0]]).T)
-            # con_ineq_lb.append(np.array([[-np.inf]]).T)
-            # pdb.set_trace()
             delta_star = 1.8 * x_t[0] + 0.5 * \
                 ((0.3 * x_t[0] ** 2 - 0.3 * x_t[1] ** 2) /
                     (0.3 * 0.3 * 9.81))
@@ -159,14 +149,13 @@ class MPC(object):
                     (0.3 * 0.3 * 9.81))
             h = x_t[2] + delta_star
             h_next = x_t_next[2] - delta_star_next
-            # h = x_t[2] - 1.8 * x_t[0] - .5 * (x_t[0] - 0) ** 2 / (0.3 * 9.81)
-            # h_next = x_t_next[2] - 1.8 * \
-            #     x_t_next[0] - .5 * (x_t_next[0] - 0) ** 2 / (0.3 * 9.81)
-            cbf = h_next + (1-1) * h
+
+            gamma = 5
+            cbf = h_next + (gamma-1) * h
             con_ineq.append(cbf)
             con_ineq_ub.append(np.array([[np.inf]]).T)
             con_ineq_lb.append(np.array([[0]]).T)
-            # pdb.set_trace()
+
         # Terminal Cost
         obj += self.terminal_cost(opt_var['x', self.Nt] - x0_ref, self.P)
 
