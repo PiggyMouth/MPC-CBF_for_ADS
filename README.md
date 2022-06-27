@@ -16,3 +16,7 @@ To run the simulation codes, please download [Scenario runner](https://github.co
 The autonomous agents are based on KeyingLucyWang's repository [Safe_Reconfiguration_Scenarios](https://github.com/KeyingLucyWang/Safe_Reconfiguration_Scenarios). The least required files are `test_config.txt`, and files in the "navigation folder".
 
 The scenario that is tested and validated is: `FollowLeadingVehicle_5`.
+
+## Perception noise model
+
+The perception noise model based on the computed distance by a CNN model during salt and pepper noise is stored in `differences.save`.
