@@ -7,7 +7,7 @@ Simulation results are shown in the folder `sim_output`.
 
 ## Carla
 
-The simulation is performed using [Carla simulator](https://github.com/carla-simulator/carla) version 0.9.12.
+The simulation is performed using [Carla simulator](https://github.com/carla-simulator/carla) version 0.9.12 with Python version 3.6.
 
 ## Scenarios
 
