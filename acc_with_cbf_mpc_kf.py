@@ -85,31 +85,14 @@ except ImportError:
         'cannot import numpy, make sure numpy package is installed')
 
 # ==============================
-# ----for acc + cbf import
-import numpy as np
-import acc_MPC
-import define_system_MPC
-import cbf_clf_qp_MPC as ccq
-import ode_solver
 import matplotlib.pyplot as plt
-from fault_injector import *
-from PIL import Image
-import pdb
-import queue
-import PerceptionNet
-import torch
-import torchvision.transforms as T
-import cvxpy as cp
 from casadi import *
+from PIL import Image
+import queue
 from mpc import MPC
 import pickle
-
 from filterpy.kalman import KalmanFilter
-# from filterpy.kalman import UnscentedKalmanFilter
-# from filterpy.kalman import JulierSigmaPoints
-from filterpy.common import Q_discrete_white_noise
-#from kalman_filter import KalmanFilter
-# ===============================
+
 
 # ==============================================================================
 # -- World ---------------------------------------------------------------------
@@ -310,35 +293,6 @@ def state_control(u, dt, T, show=0, save=1):
     plt.close(fig)
 
 
-# def fx(xt, u):
-#     # state transition function - predict next state based
-#     # on constant velocity model x = vt + x_0
-#     dt = 0.2
-#     F = np.matrix([
-#         [1, 0, 0],
-#         [0, 1, 0],
-#         [-dt, dt, 1]], dtype=float)
-#     B = np.matrix([
-#         [dt],
-#         [0],
-#         [1/2 * dt ** 2]], dtype=float)
-#     x = np.dot(F, xt) + np.dot(B, u)
-#     return x
-
-
-# def hx(xt):
-#     return np.array([[0, 0, 1]], dtype=float)
-
-
-# def kalman_filter(xt, u):
-#     dt = 0.2
-#     points = JulierSigmaPoints(n=3, kappa=1)
-#     kf = UnscentedKalmanFilter(
-#         dim_x=3, dim_z=1, dt=1., hx=hx(xt), fx=fx(xt, u), points=points)
-#     kf.P = np.eye(3) * 1000
-#     kf.R = 0.3
-#     kf.x = xt
-#     return kf
 def kalman_filter(xt):
     dt = 0.2
     kf = KalmanFilter(dim_x=3, dim_z=1, dim_u=1)
@@ -355,34 +309,10 @@ def kalman_filter(xt):
     kf.P = np.eye(3)
 
     kf.H = np.array([[0, 0, 1]])
-    #kf.Q = Q_discrete_white_noise(3, dt=0.2, var=0.01**2)
-    #kf.H = np.eye(3)
-    # kf.H = np.matrix([
-    #     [1, 0, 0],
-    #     [0, 1, 0],
-    #     [0, 0, 1]])
-    # kf.Q = np.ones(3)
-    # kf.Q = np.matrix([[(dt**4)/4, 0, 0],
-    #                   [0, dt**2, 0],
-    #                   [0, 0, 1]]) * 0.25**2
-    # kf.Q = np.matrix([
-    #     [0, 0, 0],
-    #     [0, 0, 0],
-    #     [0, 0, 1]])
     kf.R = 25
-    # kf.R = np.matrix([
-    #     [0, 0, 0],
-    #     [0, 0, 0],
-    #     [0, 0, 5]])
     kf.x = xt
 
     return kf
-
-
-def iterative_MPC(xt):
-    for i in range(3):
-        u, feas = MPC(xt)
-    return u, feas
 
 
 class World(object):
@@ -406,7 +336,7 @@ class World(object):
         self.lane_invasion_sensor = LaneInvasionSensor(self.player, self.hud)
         self.camera_manager = CameraManager(self.player, self.hud)
         self.camera_manager.set_sensor(
-            0, self.world, notify=False)  # Change sensor type
+            0, notify=False)  # Change sensor type
         self.controller = None
         self._weather_presets = find_weather_presets()
         self._weather_index = 0
@@ -428,7 +358,7 @@ class World(object):
         self.lane_invasion_sensor = LaneInvasionSensor(self.player, self.hud)
         self.camera_manager = CameraManager(self.player, self.hud)
         self.camera_manager._transform_index = cam_pos_index
-        self.camera_manager.set_sensor(cam_index,  self.world, notify=False)
+        self.camera_manager.set_sensor(cam_index, notify=False)
         actor_type = get_actor_display_name(self.player)
         self.hud.notification(actor_type)
 
@@ -543,7 +473,7 @@ class HUD(object):
         ################################################################
         speed_ = 3.6 * math.sqrt(v.x**2 + v.y**2 + v.z**2)
         time_stamp_ = datetime.timedelta(seconds=float(self.simulation_time))
-        write2csv(speed_, time_stamp_)
+        #write2csv(speed_, time_stamp_)
         ######################
 
         self._info_text = [
@@ -822,7 +752,7 @@ class CameraManager(object):
         self.sensor.set_transform(
             self._camera_transforms[self._transform_index])
 
-    def set_sensor(self, index, world, notify=True):
+    def set_sensor(self, index, notify=True):
         index = index % len(self._sensors)
         needs_respawn = True if self._index is None \
             else self._sensors[index][0] != self._sensors[self._index][0]
@@ -838,39 +768,10 @@ class CameraManager(object):
             # circular reference.
             weak_self = weakref.ref(self)
             self.sensor.listen(
-                lambda image: CameraManager._parse_image(weak_self, image, world))
-            # self._prediction = self.sensor.listen(
-            #     (lambda data: self.handle_camera(data)))
+                lambda image: CameraManager._parse_image(weak_self, image))
         if notify:
             self._hud.notification(self._sensors[index][2])
         self._index = index
-
-    def handle_camera(self, image):
-        if not self._sensors[self._index][0].startswith('sensor.lidar'):
-            image.convert(self._sensors[self._index][1])
-            self.image_queue.put(image)
-            array = np.array(image.raw_data)
-            array = np.reshape(array, (image.height, image.width, 4))
-            array = array[:, :, :3]
-            array = array[:, :, ::-1]
-            ######## NN ################
-            network_model = Loadmodel()
-            network_model.eval()
-            transform = T.Compose([
-                T.Resize((224, 224)),
-                T.ToTensor()
-            ])
-            ##############################
-
-            #####################################################
-
-            pil_image = Image.fromarray(array)
-            frame = transform(pil_image).unsqueeze(0)
-
-            prediction = get_distance(frame, network_model)
-            print(prediction)
-            self._surface = pygame.surfarray.make_surface(array.swapaxes(0, 1))
-        return prediction
 
     def next_sensor(self):
         self.set_sensor(self._index + 1)
@@ -884,8 +785,8 @@ class CameraManager(object):
         if self._surface is not None:
             display.blit(self._surface, (0, 0))
 
-    @ staticmethod
-    def _parse_image(weak_self, image, world):
+    @staticmethod
+    def _parse_image(weak_self, image):
         self = weak_self()
         if not self:
             return
@@ -904,40 +805,13 @@ class CameraManager(object):
             self._surface = pygame.surfarray.make_surface(lidar_img)
         else:
             image.convert(self._sensors[self._index][1])
-            # array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
-            array = np.array(image.raw_data)
+            array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
             array = np.reshape(array, (image.height, image.width, 4))
             array = array[:, :, :3]
             array = array[:, :, ::-1]
-            ######### NN ################
-            # network_model = Loadmodel()
-            # network_model.eval()
-            # transform = T.Compose([
-            #     T.Resize((224, 224)),
-            #     T.ToTensor()
-            # ])
-            # ##############################
-
-            # #####################################################
-            # # fm = {"ip": SolidOcclusion(0.8), "op": None}
-            # # f_i = FaultInjector(fm["ip"], fm["op"], world, False)
-            # # array = f_i.corruptSensors(array)
-
-            # fm = {"ip": WaterDrop(1, 3, 2.0, 2.0), "op": None}
-            # f_i = FaultInjector(fm["ip"], fm["op"], world, False)
-            # array = f_i.corruptSensors(array)
-            # pil_image = Image.fromarray(array)
-            # frame = transform(pil_image).unsqueeze(0)
-
-            # prediction = get_distance(frame, network_model)
-            #####################################################
-
             self._surface = pygame.surfarray.make_surface(array.swapaxes(0, 1))
         if self._recording:
-            img = Image.fromarray(array).resize((1280, 720))
-            img.save(os.path.join(
-                '_out/', f'0_{image.frame_number}.png'))
-            # image.save_to_disk('_out/%08d' % image.frame_number)
+            image.save_to_disk('_out/%08d' % image.frame_number)
 
 
 # ==============================================================================
@@ -958,8 +832,6 @@ def game_loop(args):
     x0 = np.array([[0, 0, 100]]).T
     time_steps = int(np.ceil(T / dt))
 
-    # ode_sol = ode_solver.OdeSolver(ds, dt)
-
     # initialize the input matrices
     xt = np.zeros((3, time_steps))
 
@@ -971,16 +843,7 @@ def game_loop(args):
 
     ut = np.zeros((1, time_steps))
     xt[:, 0] = np.copy(x0.T[0])
-    # desired_ego_vel = xt[:, 0][1]
-    # a_max = parameters['cd'] * parameters['G']
-    # a_min = -1*parameters['cd'] * parameters['G']
-    # speed_buffer = deque(maxlen=10)
-    # M = parameters['m']
-    # t = 0
-    a = 0
     i = 0
-    file_num = 0
-    predicted_distances = []
 
     ############# MPC PARAMETERS ####################
     Q = np.eye(3)
@@ -989,11 +852,9 @@ def game_loop(args):
     u_max = np.array([[0.3*9.81]]).T
     x_l = np.array([[0, 0, 5]]).T
     x_u = np.array([[20, 15, np.inf]]).T
-    N = 12
+    N = 8
     #################################################
     kf = kalman_filter(xt[:, i].reshape(3, 1))
-    #kf = kalman_filter(xt[:, i], ut[:, i])
-    #kf = KalmanFilter(0.2, 0, 5)
     ctl = MPC(Q=Q, R=R, P=Q, N=N,
               ulb=u_min, uub=u_max,
               xlb=x_l, xub=x_u)
@@ -1067,15 +928,10 @@ def game_loop(args):
 
             # ----------------------Current time step-------------------------------
             control, target_vehicle = agent.run_step()
-            aL = target_vehicle.get_acceleration()
-            aL = normalizer(aL)
 
-            # reference control input u_ref
-            # Fr = vehicle.getFr(xt[:, i])
-            a_ref = world.player.get_velocity()
+            # real acceleartion from the ego vehicle
+            a_ref = world.player.get_acceleration()
             a_ref = normalizer(a_ref)
-            # solve for control u at current time step
-            # u, delta, B, V, feas = qp.mpc(xt[:, i], a_ref)
             # ----------------------------------
 
             ego_vel = world.player.get_velocity()
@@ -1090,13 +946,14 @@ def game_loop(args):
             target_vehicle_vel = normalizer(target_vehicle_vel)
 
             ########################DISTANCE######################
+
             distance_between_vehicles = compute_distance(
                 target_vehicle_loc, ego_loc)
-            # # Modify distance
+            # Modify distance for initial situation when the leading vehicle is not spawned
+
             if distance_between_vehicles > xt[:, 0][2]:
                 distance_between_vehicles = xt[:, 0][2]
-            # elif distance_between_vehicles < 5:
-            #     distance_between_vehicles = 0
+
             #####################################################
             # # Calculate velocity from the simulation
             ego_vel_transform = math.sqrt(
@@ -1104,8 +961,7 @@ def game_loop(args):
 
             ################ Disturbance ########################
             noise = np.random.normal(0, 0.5, 1)[0]
-            #distance_between_vehicles_noise = distance_between_vehicles + noise
-            # # print(noise)
+
             simulation_time = int(hud.simulation_time)
             estimated_noise_model = pickle.load(open('differences.save', 'rb'))
             estimated_noise = estimated_noise_model.predict(
@@ -1117,8 +973,8 @@ def game_loop(args):
 
             true_x[:, i][2] = distance_between_vehicles
 
-            kf.predict(a)
-            #kf.predict(fx=fx(xt[:, i+1].reshape(3, 1), ut[:, i].reshape(1, 1)))
+            kf.predict(a_ref)
+
             xt_estimate = kf.x
 
             kf.update(distance_between_vehicles_noise)
@@ -1127,46 +983,17 @@ def game_loop(args):
             kf_x[:, i][2] = distance_between_vehicles_noise
 
             u, status = ctl.mpc_controller(xt[:, i].reshape(3, 1))
-            #u, feas = MPC(xt[:, i])
-            # if feas == -1:
+
             if status == "Infeasible_Problem_Detected":
                 # infeasible
                 print('infeasible')
                 print(xt[:, i])
-                # u = [-1]
-                # delta = 0
-                # V = 0
-                # B = 0
-                # control.throttle = 0
-                # control.brake = 1
-                # pdb.set_trace()
-
-                # pdb.set_trace()
-                # control.throttle = 0
-                # control.brake = 1
                 break
             else:
                 ut[:, i] = np.copy(u)
-                # slackt[:, i] = np.copy(delta)
-                # Vt[:, i] = np.copy(V)
-                # Bt[:, i] = np.copy(B)
                 a = float(u)
                 a_min = -1*9.81
-                # xt[:, i + 1] = ode_sol.time_marching(xt[:, i], u)
-                # u = u[0]
-                # Fr = Fr[0]
-                # a = -Fr/M + u/M
-                # a = np.clip(u, a_min, a_max)
-                # if i == 0:
-                #     # desired_ego_vel = xt[:, 0][1]
-                #     desired_ego_vel = xt[:, i + 1][1]
-                # if len(speed_buffer) >= 2:
-                #     desired_ego_vel = a*dt + speed_buffer[-1]
 
-                # ===================================================================
-                # k*0,25 + 0.5 = 3 => k = 10
-                # throttle = (a - 0.5)/10
-                # pdb.set_trace()
                 if a > 0:
                     control.throttle = a/10 + 0.5
                     control.brake = 0
@@ -1178,17 +1005,6 @@ def game_loop(args):
                     control.throttle = 0
                     control.brake = a/-10
 
-            # ================================================================
-
-            # desired_ego_vel = xt[:, i + 1][1]
-            # print(desired_ego_vel)
-
-            # print(control.brake)
-            # print(desired_ego_vel)
-            # speed_buffer.append(desired_ego_vel)
-            # agent.set_speed(desired_ego_vel*3.6)
-            # world.player.add_force(carla.Vector3D(0, 0, u))
-            # agent.set_speed(v)
             world.player.apply_control(control)
 
             xt[:, i+1][0] = ego_vel_transform
@@ -1196,11 +1012,6 @@ def game_loop(args):
 
             true_x[:, i+1][0] = ego_vel_transform
             true_x[:, i+1][1] = target_vehicle_vel
-
-            # if distance_between_vehicles_noise <= 105:
-            # kf.predict()
-
-            # t = t + 1
 
             i = i + 1
             if i == time_steps-1:
@@ -1215,15 +1026,11 @@ def game_loop(args):
         # os.system(
         #    "avconv -r 8 -f image2 -i Snaps/%04d.png -y -qscale 0 -s 1280x720 -aspect 4:3 result.avi")
         T = int(hud.simulation_time)
-        dt = T/size  # T/(i+1)
+        dt = T/size
         state_control(ut, dt, T)
         state_velocity(xt, dt, T)
         state_velocity_leading(xt, dt, T)
         state_relative_distance(xt, dt, T, kf_x, true_x)
-
-        # cbf(Bt, dt, T)
-        # clf(Vt, dt, T)
-        # slack(slackt, dt, T)
 
 
 # ==============================================================================
