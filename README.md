@@ -5,7 +5,7 @@ The source codes for the work "Robust Safe Control for Automated Driving Systems
 
 Simulation results are shown in the folder `sim_output` (at the moment when Kalman filter is placed after the control action). 
 
-The script: `acc_with_cbf_mpc_kf.py` is updated with having Kalman filter placed before the control action, but not `acc_with_cbf_mpc.py`.
+The script: `acc_with_cbf_mpc_kf.py` is updated with having the Kalman filter placed before the control action, but not `acc_with_cbf_mpc.py`.
 
 ## Carla
 
