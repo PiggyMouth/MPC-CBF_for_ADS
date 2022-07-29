@@ -85,21 +85,13 @@ except ImportError:
         'cannot import numpy, make sure numpy package is installed')
 
 # ==============================
-# ----for acc + cbf import
-import numpy as np
 import matplotlib.pyplot as plt
-from fault_injector import *
+from casadi import *
 from PIL import Image
 import queue
-import PerceptionNet
-import torch
-import torchvision.transforms as T
-from casadi import *
 from mpc import MPC
-from filterpy.kalman import KalmanFilter
-#from kalman_filter import KalmanFilter
-# ===============================
-
+import pickle
+import pdb
 # ==============================================================================
 # -- World ---------------------------------------------------------------------
 # ==============================================================================
@@ -205,18 +197,18 @@ def state_velocity_leading(xt, dt, T, show=0, save=1):
     plt.close(fig)
 
 
-def state_relative_distance(xt, dt, T, kf_x, true_x, show=0, save=1):
+def state_relative_distance(xt, dt, T, true_x, show=0, save=1):
     t = np.arange(0, T, dt)
     fig = plt.figure(figsize=[16, 9])
     plt.grid()
     # plt.plot(t, xt[2, :], linewidth=3, color='black',
     #          label='Estimated Distance')
-    # plt.plot(t, kf_x[2, :], linestyle='dashed', label='Noisy Distance')
-    # plt.plot(t, xt[2, :], linestyle='dashed',
-    #          color='orange', label='True Distance')
-    plt.plot(t, xt[2, :], linewidth=1, color='red', label='Relative Distance')
+    # plt.plot(t, xt[2, :], linestyle='dashed', label='Noisy Distance')
+    # plt.plot(t, true_x[2, :], linestyle='dashed',
+    #          color='red', label='True Distance')
+    plt.plot(t, xt[2, :], linewidth=1, color='blue', label='Relative Distance')
     plt.legend(prop={'size': 25})
-    plt.ylim(0, 100)
+    #plt.ylim(0, 150)
     # plt.title('Relative distance')
     plt.ylabel('z')
     plt.xlabel('t')
@@ -299,45 +291,6 @@ def state_control(u, dt, T, show=0, save=1):
                     dpi=300, bbox_inches='tight')
 
     plt.close(fig)
-
-
-def kalman_filter(xt):
-    dt = 0.2
-    kf = KalmanFilter(dim_x=3, dim_z=1, dim_u=1)
-
-    kf.F = np.matrix([
-        [1, 0, 0],
-        [0, 1, 0],
-        [-dt, dt, 1]])
-    kf.B = np.matrix([
-        [dt],
-        [0],
-        [1/2 * dt ** 2]])
-
-    kf.P = np.eye(3)
-
-    kf.H = np.array([[0, 0, 1]])
-    #kf.H = np.eye(3)
-    # kf.H = np.matrix([
-    #     [1, 0, 0],
-    #     [0, 1, 0],
-    #     [0, 0, 1]])
-    # kf.Q = np.ones(3)
-    # kf.Q = np.matrix([[(dt**4)/4, 0, 0],
-    #                   [0, dt**2, 0],
-    #                   [0, 0, 1]]) * 0.25**2
-    # kf.Q = np.matrix([
-    #     [0, 0, 0],
-    #     [0, 0, 0],
-    #     [0, 0, 1]])
-    kf.R = 30
-    # kf.R = np.matrix([
-    #     [0, 0, 0],
-    #     [0, 0, 0],
-    #     [0, 0, 5]])
-    kf.x = xt
-
-    return kf
 
 
 def iterative_MPC(xt):
@@ -913,91 +866,35 @@ def game_loop(args):
     # pygame.time.Clock().get_fps()
     world = None
 
-    tot_target_reached = 0
-    num_min_waypoints = 21
-    rainy_weather = carla.WeatherParameters(40, 60, 40, 40, 0, 0, 75)
-
-    weather_changed = False
-
-    # ==============================
-    # parameters = {
-    #     'f0': .1,
-    #     'f1': 5,
-    #     'f2': .25,
-    #     'v0': 0,
-    #     'm': 1650,
-    #     'T': 1.8,
-    #     'cd': .3,
-    #     'al': .3,
-    #     'af': .3,
-    #     'vd': 18,
-    #     'G': 9.8,
-    #     'udim': 1,
-    #     'Ts': 0.05
-    # }
-
-    # vehicle = acc_MPC.AdaptiveCruiseControl(parameters)
-    # ds = define_system_MPC.ControlAffineSystem(vehicle)
-
-    # QPoption = ccq.CbfClfQpOptions()
-    # # input constraints
-    # QPoption.set_option('u_max', np.array(
-    #     [.3 * parameters['G']]))
-    # QPoption.set_option('u_min', np.array(
-    #     [-.3 * parameters['G']]))
-    # QPoption.set_option('clf_lambda', 5.0)  # 5
-    # QPoption.set_option('cbf_gamma', 5.0)
-    # QPoption.set_option('weight_input', np.array([2]))  # H
-    # # p small values makes it more conservative.
-    # QPoption.set_option('weight_slack', 2e-2)
-
-    # qp = ccq.CbfClfQp(ds, QPoption)
-
-    T = 8  # 52 with default speed # clash at 106s
+    T = 10  # 52 with default speed # clash at 106s
     dt = 0.01
     size = T/dt
     x0 = np.array([[0, 0, 100]]).T
     time_steps = int(np.ceil(T / dt))
 
-    # ode_sol = ode_solver.OdeSolver(ds, dt)
-
     # initialize the input matrices
     xt = np.zeros((3, time_steps))
-
-    kf_x = np.zeros((3, time_steps))
-    kf_x[:, 0] = np.copy(x0.T[0])
 
     true_x = np.zeros((3, time_steps))
     true_x[:, 0] = np.copy(x0.T[0])
 
-    tt = np.zeros((1, time_steps))
     ut = np.zeros((1, time_steps))
-
-    slackt = np.zeros((1, time_steps))
-    Vt = np.zeros((1, time_steps))
-    Bt = np.zeros((1, time_steps))
     xt[:, 0] = np.copy(x0.T[0])
-    # desired_ego_vel = xt[:, 0][1]
-    # a_max = parameters['cd'] * parameters['G']
-    # a_min = -1*parameters['cd'] * parameters['G']
-    # speed_buffer = deque(maxlen=10)
-    # M = parameters['m']
-    # t = 0
     i = 0
-    file_num = 0
-    predicted_distances = []
 
+    distance_between_vehicles = 500
     ############# MPC PARAMETERS ####################
     Q = np.eye(3)
-    H = 2*np.eye(1)
+    R = 2*np.eye(1)
     u_min = np.array([[-1*9.81]]).T
     u_max = np.array([[0.3*9.81]]).T
     x_l = np.array([[0, 0, 5]]).T
     x_u = np.array([[20, 15, np.inf]]).T
-    N = 12
+    N = 8
     #################################################
-    kf = kalman_filter(xt[:, i].reshape(3, 1))
-    #kf = KalmanFilter(0.2, 0, 5)
+    # ctl = MPC(Q=Q, R=R, P=Q, N=N,
+    #           ulb=u_min, uub=u_max,
+    #           xlb=x_l, xub=x_u)
 
     try:
         client = carla.Client(args.host, args.port)
@@ -1044,30 +941,11 @@ def game_loop(args):
 
         clock = pygame.time.Clock()
         recorder = ScreenRecorder(1280, 720, 60)
-        # world.world.set_weather(sunny_weather)
-
-        # get weather change info from test_config file
-        # f = open("test_config.txt", "r")
-        # extreme_weather = f.read().split(",")[27]
-        # if extreme_weather == "True":
-        #     extreme_weather = True
-        # else:
-        #     extreme_weather = False
 
         while True:
             clock.tick_busy_loop(60)
             if controller.parse_events():
                 return
-
-            # if extreme_weather and not weather_changed:
-            #     trigger_loc = world.map.get_waypoint(
-            #         carla.Location(48, -312, 0)).transform.location
-            #     dist = math.sqrt((trigger_loc.x - world.player.get_location().x)
-            #                      ** 2 + (trigger_loc.y - world.player.get_location().y)**2)
-            #     if dist < 10:
-            #         world.world.set_weather(rainy_weather)
-            #         agent.extreme_weather = True
-            #         weather_changed = True
 
             if not world.world.wait_for_tick(10.0):
                 continue
@@ -1088,17 +966,36 @@ def game_loop(args):
 
             # ----------------------Current time step-------------------------------
             control, target_vehicle = agent.run_step()
-            aL = target_vehicle.get_acceleration()
-            aL = normalizer(aL)
 
-            # reference control input u_ref
-            # Fr = vehicle.getFr(xt[:, i])
-            a_ref = world.player.get_velocity()
-            a_ref = normalizer(a_ref)
-            # solve for control u at current time step
-            # u, delta, B, V, feas = qp.mpc(xt[:, i], a_ref)
+            ################ Noise ########################
+            # noise = np.random.normal(0, 0.5, 1)[0]
+            # #distance_between_vehicles_noise = distance_between_vehicles + noise
 
-            ctl = MPC(Q=Q, R=H, P=Q, N=N,
+            # simulation_time = int(hud.simulation_time)
+            # estimated_noise_model = pickle.load(open('differences.save', 'rb'))
+            # estimated_noise = estimated_noise_model.predict(
+            #     np.array(simulation_time).reshape(-1, 1))[0]
+            ####################################################
+
+            if distance_between_vehicles >= 500:
+                # Modify distance for initial situation when the leading vehicle is not spawned
+                # which causes the distance between vehicles to be larger than 500.
+                distance_between_vehicles = xt[:, 0][2]
+            else:
+                xt[:, i][0] = ego_vel_transform
+                xt[:, i][1] = target_vehicle_vel
+
+                true_x[:, i][0] = ego_vel_transform
+                true_x[:, i][1] = target_vehicle_vel
+
+            # distance_between_vehicles_noise = distance_between_vehicles + \
+            #     estimated_noise*noise
+            # print(distance_between_vehicles_noise)
+            xt[:, i][2] = distance_between_vehicles
+            #true_x[:, i][2] = distance_between_vehicles
+            #####################################################
+
+            ctl = MPC(Q=Q, R=R, P=Q, N=N,
                       ulb=u_min, uub=u_max,
                       xlb=x_l, xub=x_u)
             u, status = ctl.mpc_controller(xt[:, i].reshape(3, 1))
@@ -1108,42 +1005,12 @@ def game_loop(args):
                 # infeasible
                 print('infeasible')
                 print(xt[:, i])
-                # pdb.set_trace()
-                # u = [-1]
-                # delta = 0
-                # V = 0
-                # B = 0
-                # control.throttle = 0
-                # control.brake = 1
-                # pdb.set_trace()
-
-                # pdb.set_trace()
-                # control.throttle = 0
-                # control.brake = 1
-                # sys.exit()
                 break
             else:
                 ut[:, i] = np.copy(u)
-                # slackt[:, i] = np.copy(delta)
-                # Vt[:, i] = np.copy(V)
-                # Bt[:, i] = np.copy(B)
                 a = float(u)
                 a_min = -1*9.81
-                # xt[:, i + 1] = ode_sol.time_marching(xt[:, i], u)
-                # u = u[0]
-                # Fr = Fr[0]
-                # a = -Fr/M + u/M
-                # a = np.clip(u, a_min, a_max)
-                # if i == 0:
-                #     # desired_ego_vel = xt[:, 0][1]
-                #     desired_ego_vel = xt[:, i + 1][1]
-                # if len(speed_buffer) >= 2:
-                #     desired_ego_vel = a*dt + speed_buffer[-1]
 
-                # ===================================================================
-                # k*0,25 + 0.5 = 3 => k = 10
-                # throttle = (a - 0.5)/10
-                # pdb.set_trace()
                 if a > 0:
                     control.throttle = a/10 + 0.5
                     control.brake = 0
@@ -1155,97 +1022,27 @@ def game_loop(args):
                     control.throttle = 0
                     control.brake = a/-10
 
-            # ================================================================
-
-            # desired_ego_vel = xt[:, i + 1][1]
-            # print(desired_ego_vel)
-
-            # print(control.brake)
-            # print(desired_ego_vel)
-            # speed_buffer.append(desired_ego_vel)
-            # agent.set_speed(desired_ego_vel*3.6)
-            # world.player.add_force(carla.Vector3D(0, 0, u))
-            # agent.set_speed(v)
             world.player.apply_control(control)
 
-            # if aceleration throttle is 0, 1 apply throttle, else apply brake.
-            # control.throttle = 1
-            # control.brake = 0
-            # print(desired_ego_vel)
-            # agent.set_speed(desired_ego_vel)
-            # agent.set_speed(70)
-            # leading_agent_scenario.set_speed(desired_leading_vel)
-            # leading_agent_scenario.set_speed(10)
-            # world.player.apply_control(control)
-
+            # ########## UPDATE ##############
             ego_vel = world.player.get_velocity()
             ego_loc = world.player.get_location()
-            # calc distance to leading vehicle and append it to state.
-            initial_position = carla.Location(
-                x=-326.200012, y=435.799988, z=0.032870)
-            position = compute_distance(ego_loc, initial_position)
-
             target_vehicle_loc = target_vehicle.get_location()
             target_vehicle_vel = target_vehicle.get_velocity()
             target_vehicle_vel = normalizer(target_vehicle_vel)
 
-            ########################DISTANCE######################
-            distance_between_vehicles = compute_distance(
-                target_vehicle_loc, ego_loc)
-            # # Modify distance
-            if distance_between_vehicles > xt[:, 0][2]:
-                distance_between_vehicles = xt[:, 0][2]
-            # elif distance_between_vehicles < 5:
-            #     distance_between_vehicles = 0
-            #####################################################
             # # Calculate velocity from the simulation
             ego_vel_transform = math.sqrt(
                 ego_vel.x ** 2 + ego_vel.y ** 2 + ego_vel.z ** 2)
+            distance_between_vehicles = compute_distance(
+                target_vehicle_loc, ego_loc)
+            # xt[:, i+1][0] = ego_vel_transform
+            # xt[:, i+1][1] = target_vehicle_vel
+            # #xt[:, i+1][2] = distance_between_vehicles
 
-            ################ Disturbance ########################
-            # noise = np.random.normal(0, 0.5, 1)[0]
-            # #distance_between_vehicles_noise = distance_between_vehicles + noise
-            # # # print(noise)
-            # simulation_time = int(hud.simulation_time)
-            # estimated_noise_model = pickle.load(open('differences.save', 'rb'))
-            # estimated_noise = estimated_noise_model.predict(
-            #     np.array(simulation_time).reshape(-1, 1))[0]
-            # distance_between_vehicles_noise = distance_between_vehicles + \
-            #     estimated_noise*noise
-            # print(estimated_noise*noise)
-            # print(distance_between_vehicles)
-            # simulation_time = int(hud.simulation_time)
-            # disturbance = 9.81*0.1*np.cos(2*np.pi*simulation_time/20)
-            # ego_vel_transform = ego_vel_transform + disturbance
-
-            #######################################################
-
-            # xt[:, i+1][0] = position
-            # xt[:, i+1][1] = ego_vel_transform
-            # xt[:, i+1][2] = distance_between_vehicles
-            # predicted_distance = world.predicted_dist
-            # predicted_distances.append(predicted_distance)
-            # print(predicted_distance)
-            xt[:, i+1][0] = ego_vel_transform
-            xt[:, i+1][1] = target_vehicle_vel
-            xt[:, i+1][2] = distance_between_vehicles
-
-            true_x[:, i+1][0] = ego_vel_transform
-            true_x[:, i+1][1] = target_vehicle_vel
-            true_x[:, i+1][2] = distance_between_vehicles
-
-            # if distance_between_vehicles_noise <= 105:
-            # kf.predict()
-
-            # kf.predict(a)
-            # xt_estimate = kf.x
-
-            # kf.update(distance_between_vehicles_noise)
-            # xt[:, i+1][2] = xt_estimate[2]
-
-            # kf_x[:, i+1][2] = distance_between_vehicles_noise
-
-            # t = t + 1
+            # true_x[:, i+1][0] = ego_vel_transform
+            # true_x[:, i+1][1] = target_vehicle_vel
+            #true_x[:, i+1][2] = distance_between_vehicles
 
             i = i + 1
             if i == time_steps-1:
@@ -1264,7 +1061,7 @@ def game_loop(args):
         state_control(ut, dt, T)
         state_velocity(xt, dt, T)
         state_velocity_leading(xt, dt, T)
-        state_relative_distance(xt, dt, T, kf_x, true_x)
+        state_relative_distance(xt, dt, T, true_x)
 
         # cbf(Bt, dt, T)
         # clf(Vt, dt, T)

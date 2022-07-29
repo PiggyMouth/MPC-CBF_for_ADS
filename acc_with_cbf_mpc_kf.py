@@ -208,7 +208,7 @@ def state_relative_distance(xt, dt, T, kf_x, true_x, show=0, save=1):
              color='orange', label='Estimated Distance')
     plt.plot(t, true_x[2, :], linewidth=1, color='red', label='True Distance')
     plt.legend(prop={'size': 25})
-    plt.ylim(0, 100)
+    #plt.ylim(0, 150)
     # plt.title('Relative distance')
     plt.ylabel('z')
     plt.xlabel('t')
@@ -845,6 +845,8 @@ def game_loop(args):
     xt[:, 0] = np.copy(x0.T[0])
     i = 0
 
+    distance_between_vehicles = 500
+    u = 0
     ############# MPC PARAMETERS ####################
     Q = np.eye(3)
     R = 2*np.eye(1)
@@ -855,9 +857,9 @@ def game_loop(args):
     N = 8
     #################################################
     kf = kalman_filter(xt[:, i].reshape(3, 1))
-    ctl = MPC(Q=Q, R=R, P=Q, N=N,
-              ulb=u_min, uub=u_max,
-              xlb=x_l, xub=x_u)
+    # ctl = MPC(Q=Q, R=R, P=Q, N=N,
+    #           ulb=u_min, uub=u_max,
+    #           xlb=x_l, xub=x_u)
     try:
         client = carla.Client(args.host, args.port)
         client.set_timeout(2.0)
@@ -927,53 +929,41 @@ def game_loop(args):
             recorder.capture_frame(display)
 
             # ----------------------Current time step-------------------------------
+            ctl = MPC(Q=Q, R=R, P=Q, N=N,
+                      ulb=u_min, uub=u_max,
+                      xlb=x_l, xub=x_u)
             control, target_vehicle = agent.run_step()
 
-            # real acceleartion from the ego vehicle
-            a_ref = world.player.get_acceleration()
-            a_ref = normalizer(a_ref)
-            # ----------------------------------
+            # real acceleartion from the ego vehicle for KF
+            # a_ref = world.player.get_acceleration()
+            # a_ref = normalizer(a_ref)
 
-            ego_vel = world.player.get_velocity()
-            ego_loc = world.player.get_location()
-            # calc distance to leading vehicle and append it to state.
-            initial_position = carla.Location(
-                x=-326.200012, y=435.799988, z=0.032870)
-            position = compute_distance(ego_loc, initial_position)
-
-            target_vehicle_loc = target_vehicle.get_location()
-            target_vehicle_vel = target_vehicle.get_velocity()
-            target_vehicle_vel = normalizer(target_vehicle_vel)
-
-            ########################DISTANCE######################
-
-            distance_between_vehicles = compute_distance(
-                target_vehicle_loc, ego_loc)
-            # Modify distance for initial situation when the leading vehicle is not spawned
-
-            if distance_between_vehicles > xt[:, 0][2]:
-                distance_between_vehicles = xt[:, 0][2]
-
-            #####################################################
-            # # Calculate velocity from the simulation
-            ego_vel_transform = math.sqrt(
-                ego_vel.x ** 2 + ego_vel.y ** 2 + ego_vel.z ** 2)
-
-            ################ Disturbance ########################
+            ################ Noise ########################
             noise = np.random.normal(0, 0.5, 1)[0]
+            #distance_between_vehicles_noise = distance_between_vehicles + noise
 
             simulation_time = int(hud.simulation_time)
             estimated_noise_model = pickle.load(open('differences.save', 'rb'))
             estimated_noise = estimated_noise_model.predict(
                 np.array(simulation_time).reshape(-1, 1))[0]
+            ####################################################
+
+            ########################DISTANCE######################
+            if distance_between_vehicles >= 500:
+                # Modify distance for initial situation when the leading vehicle is not spawned
+                # which causes the distance between vehicles to be larger than 500.
+                distance_between_vehicles = xt[:, 0][2]
+            else:
+                xt[:, i][0] = ego_vel_transform
+                xt[:, i][1] = target_vehicle_vel
+
+                true_x[:, i][0] = ego_vel_transform
+                true_x[:, i][1] = target_vehicle_vel
             distance_between_vehicles_noise = distance_between_vehicles + \
-                estimated_noise * noise
-
-            xt[:, i][2] = distance_between_vehicles_noise
-
+                estimated_noise*noise
             true_x[:, i][2] = distance_between_vehicles
 
-            kf.predict(a_ref)
+            kf.predict(u)
 
             xt_estimate = kf.x
 
@@ -1007,11 +997,18 @@ def game_loop(args):
 
             world.player.apply_control(control)
 
-            xt[:, i+1][0] = ego_vel_transform
-            xt[:, i+1][1] = target_vehicle_vel
+            # ########## UPDATE ##############
+            ego_vel = world.player.get_velocity()
+            ego_loc = world.player.get_location()
+            target_vehicle_loc = target_vehicle.get_location()
+            target_vehicle_vel = target_vehicle.get_velocity()
+            target_vehicle_vel = normalizer(target_vehicle_vel)
 
-            true_x[:, i+1][0] = ego_vel_transform
-            true_x[:, i+1][1] = target_vehicle_vel
+            # # Calculate velocity from the simulation
+            ego_vel_transform = math.sqrt(
+                ego_vel.x ** 2 + ego_vel.y ** 2 + ego_vel.z ** 2)
+            distance_between_vehicles = compute_distance(
+                target_vehicle_loc, ego_loc)
 
             i = i + 1
             if i == time_steps-1:
