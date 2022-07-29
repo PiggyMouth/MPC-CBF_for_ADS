@@ -826,7 +826,7 @@ def game_loop(args):
     # pygame.time.Clock().get_fps()
     world = None
 
-    T = 11  # 52 with default speed # clash at 106s
+    T = 8  # 52 with default speed # clash at 106s
     dt = 0.01
     size = T/dt
     x0 = np.array([[0, 0, 100]]).T
@@ -929,10 +929,6 @@ def game_loop(args):
             recorder.capture_frame(display)
 
             # ----------------------Current time step-------------------------------
-            ctl = MPC(Q=Q, R=R, P=Q, N=N,
-                      ulb=u_min, uub=u_max,
-                      xlb=x_l, xub=x_u)
-            control, target_vehicle = agent.run_step()
 
             # real acceleartion from the ego vehicle for KF
             # a_ref = world.player.get_acceleration()
@@ -972,6 +968,10 @@ def game_loop(args):
 
             kf_x[:, i][2] = distance_between_vehicles_noise
 
+            ctl = MPC(Q=Q, R=R, P=Q, N=N,
+                      ulb=u_min, uub=u_max,
+                      xlb=x_l, xub=x_u)
+            control, target_vehicle = agent.run_step()
             u, status = ctl.mpc_controller(xt[:, i].reshape(3, 1))
 
             if status == "Infeasible_Problem_Detected":

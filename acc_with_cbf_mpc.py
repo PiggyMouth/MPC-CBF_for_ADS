@@ -201,12 +201,10 @@ def state_relative_distance(xt, dt, T, true_x, show=0, save=1):
     t = np.arange(0, T, dt)
     fig = plt.figure(figsize=[16, 9])
     plt.grid()
-    # plt.plot(t, xt[2, :], linewidth=3, color='black',
-    #          label='Estimated Distance')
     # plt.plot(t, xt[2, :], linestyle='dashed', label='Noisy Distance')
     # plt.plot(t, true_x[2, :], linestyle='dashed',
     #          color='red', label='True Distance')
-    plt.plot(t, xt[2, :], linewidth=1, color='blue', label='Relative Distance')
+    plt.plot(t, xt[2, :], linewidth=1, label='Relative Distance')
     plt.legend(prop={'size': 25})
     #plt.ylim(0, 150)
     # plt.title('Relative distance')
@@ -866,7 +864,7 @@ def game_loop(args):
     # pygame.time.Clock().get_fps()
     world = None
 
-    T = 10  # 52 with default speed # clash at 106s
+    T = 8  # 52 with default speed # clash at 106s
     dt = 0.01
     size = T/dt
     x0 = np.array([[0, 0, 100]]).T
@@ -980,19 +978,18 @@ def game_loop(args):
             if distance_between_vehicles >= 500:
                 # Modify distance for initial situation when the leading vehicle is not spawned
                 # which causes the distance between vehicles to be larger than 500.
-                distance_between_vehicles = xt[:, 0][2]
+                distance_between_vehicles = 100
             else:
                 xt[:, i][0] = ego_vel_transform
                 xt[:, i][1] = target_vehicle_vel
 
-                true_x[:, i][0] = ego_vel_transform
-                true_x[:, i][1] = target_vehicle_vel
+                # true_x[:, i][0] = ego_vel_transform
+                # true_x[:, i][1] = target_vehicle_vel
 
             # distance_between_vehicles_noise = distance_between_vehicles + \
             #     estimated_noise*noise
-            # print(distance_between_vehicles_noise)
             xt[:, i][2] = distance_between_vehicles
-            #true_x[:, i][2] = distance_between_vehicles
+            # true_x[:, i][2] = distance_between_vehicles
             #####################################################
 
             ctl = MPC(Q=Q, R=R, P=Q, N=N,
