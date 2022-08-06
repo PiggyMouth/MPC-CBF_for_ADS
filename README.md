@@ -54,4 +54,4 @@ In the second terminal, enter the python script name that you want to run i.e.: 
 
 You will now see a pygame window with the scenario running. To run it again, simply enter the aforementioned commands again. 
 
-The figures in the folder `sim_output` stores the case when N = 6, 8, 12. For respective case, T is preferred to be T = 12, 8, 6.
+The figures in the folder `sim_output` stores the case when N = 6, 8, 12. For respective case, T is preferred to be T = 12, 8, 8.
