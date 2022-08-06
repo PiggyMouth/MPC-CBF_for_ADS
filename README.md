@@ -5,7 +5,11 @@ The source codes for the work "Robust Safe Control for Automated Driving Systems
 
 Simulation results are shown in the folder `sim_output` (at the moment when Kalman filter is placed after the control action). 
 
-The script: `acc_with_cbf_mpc_kf.py` is updated with having the Kalman filter placed before the control action, but not `acc_with_cbf_mpc.py`.
+The scripts: 
+* `acc_with_cbf_mpc.py` simulate the case without any perception noise present
+* `acc_with_cbf_mpc_noise.py` simulates the case with perception noise present
+* `acc_with_cbf_mpc_kf.py` simulates with Kalman filter placed before the control action to handle the perception noise
+
 
 ## Carla
 
