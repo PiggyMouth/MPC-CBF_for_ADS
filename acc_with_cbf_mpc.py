@@ -888,7 +888,7 @@ def game_loop(args):
     u_max = np.array([[0.3*9.81]]).T
     x_l = np.array([[0, 0, 5]]).T
     x_u = np.array([[20, 15, np.inf]]).T
-    N = 8
+    N = 12
     #################################################
     # ctl = MPC(Q=Q, R=R, P=Q, N=N,
     #           ulb=u_min, uub=u_max,
