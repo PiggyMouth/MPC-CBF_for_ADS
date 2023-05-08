@@ -1,7 +1,7 @@
 [![DOI](https://zenodo.org/badge/505930246.svg)](https://zenodo.org/badge/latestdoi/505930246)
 # MPC-CBF_for_ADS
 
-The source codes for the work "Robust Safe Control for Automated Driving Systems With Perception Uncertainties" by Yan Feng Yu are listed here.
+The source codes for the work ["Robust Safe Control for Automated Driving Systems With Perception Uncertainties"](https://kth.diva-portal.org/smash/record.jsf?dswid=-2929&pid=diva2%3A1704875&c=2&searchType=SIMPLE&language=no&query=feng+yu&af=%5B%22dateIssued%3A2022%22%5D&aq=%5B%5B%5D%5D&aq2=%5B%5B%5D%5D&aqe=%5B%5D&noOfRows=50&sortOrder=author_sort_asc&sortOrder2=title_sort_asc&onlyFullText=false&sf=all) by Yan Feng Yu are listed here.
 
 Simulation results are shown in the folder `sim_output` (at the moment when Kalman filter is placed after the control action). 
 
